@@ -28,9 +28,6 @@ static STIVALE2_HEADER: stivale::stivale2_header = stivale::stivale2_header {
 	tags: &STIVALE2_FRAMEBUFFER_TAG as *const stivale::stivale2_header_tag_framebuffer as *const stivale::stivale2_header_tag,
 };
 
-// THERE IS NOTHING WRONG WITH USING A THIRD-PARTY BOOTLOADER SUCH AS GRUB OR
-// LIMINE OR BOOTBOOT OR PHIL OPP'S BOOTLOADER IF THIS MAKES YOUR LIFE EASIER
-
 mod x86 {
 	pub fn hlt() {
 		// SAFETY: Calling halt is really unsafe as it, uhm, halts the CPU. But as
