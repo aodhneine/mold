@@ -80,7 +80,7 @@ impl core::fmt::Write for SerialPort {
 	}
 }
 
-struct FontInfo {
+pub struct FontInfo {
 	/// Region of memory where the spritesheet with the glyphs is stored.
 	chars: &'static [u8],
 	/// Width of the image containing glyphs.
@@ -91,7 +91,7 @@ struct FontInfo {
 	baseline: u16,
 }
 
-/// Global 6x13 font, based on default X11 fonts.
+/// Global 6x13 font, based on [Cozette](https://github.com/slavfox/Cozette).
 const FONT: FontInfo = FontInfo {
 	chars: include_bytes!("../font.raw"),
 	glyphsheet_width: 96,
@@ -121,6 +121,84 @@ const FONT: FontInfo = FontInfo {
 // 'B' => (byte1 & 0b1111) << 2 | byte2 >> 6
 // 'C' => byte2 & 0b111111
 
+mod framebuffer {
+	pub struct Framebuffer {
+		inner: *mut u8,
+		pitch: u16,
+	}
+
+	impl Framebuffer {
+		pub fn new(tag: &crate::stivale::stivale2_struct_tag_framebuffer) -> Self {
+			return Self {
+				inner: tag.framebuffer_addr as *mut u8,
+				pitch: tag.framebuffer_pitch,
+			};
+		}
+
+		// Framebuffer only exposes the memory address and some related values, as
+		// width or pitch. It's purpose it not being a TTY like in Linux, but just
+		// a general way to draw pixels on the screen. So you need to provide all
+		// these arguments when writing a string.
+		pub fn write_str(&mut self, x: usize, y: usize, s: &str, font: &crate::FontInfo) {
+			// TODO: This is probably slow as heck!
+			for (i, b) in s.as_bytes().iter().enumerate() {
+				let mut cx = x + i * 6;
+				let mut cy = y;
+
+				// Get the glyph index in the glyph sheet. For ASCII characters it's going
+				// be (code point of the character) - (code point of the space, but for the
+				// Unicode characters we probably need to use glyph mapping tables to get
+				// indices of the glyphs in the font.)
+				let index = b - b' ';
+
+				// Get the row and column where we can find that glyph.
+				let row = (index / 16) as usize;
+				let column = (index % 16) as usize;
+
+				// Glyph column * width of each glyph.
+				let pixel = column * 6;
+
+				// 13 lines of 12 bytes in each glyph line.
+				let lines = font.chars[row * 12 * 13..(row + 1) * 12 * 13].chunks(12);
+
+				// Loop over each of the 13 lines that are part of the single glyph line.
+				for line in lines {
+					// Loop over each of the 12 bytes in the line.
+					for (byte_index, byte) in line.iter().enumerate() {
+						// Loop over each pixel in byte.
+						for pixel_index in 0..8 {
+							let pixel_offset = byte_index * 8 + pixel_index;
+
+							// Ignore those pixels which are not in the column we want.
+							if !(pixel..pixel + 6).contains(&pixel_offset) {
+								continue;
+							}
+
+							// Get the pixel value.
+							let px = (byte >> (8 - pixel_index - 1)) & 1;
+
+							unsafe {
+								(self.inner.add(self.pitch as usize * cy + 4 * cx) as *mut u32).write(match px {
+									0 => 0xff0000ff,
+									1 => 0xffffffff,
+									// Doing `& 1` operation means that this can never be anything
+									// else but 0 or 1.
+									_ => core::hint::unreachable_unchecked(),
+								});
+							}
+
+							cx += 1;
+						}
+					}
+
+					cx = x + i * 6;
+					cy += 1;
+				}
+			}
+		}
+	}
+}
+
 #[cfg_attr(debug_assertions, allow(unused_must_use))]
 #[no_mangle]
 pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
@@ -140,70 +218,10 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 		&*(framebuffer_tag as *const stivale::stivale2_struct_tag_framebuffer)
 	};
 
-	let framebuffer = framebuffer_tag.framebuffer_addr as *mut u8;
-	writeln!(com1, "bpp: {}", framebuffer_tag.framebuffer_bpp);
-	writeln!(com1, "pitch: {}", framebuffer_tag.framebuffer_pitch);
+	let mut framebuffer = framebuffer::Framebuffer::new(framebuffer_tag);
 
-	let str = "Il1egal 0O";
-
-	let x = 16;
-	let y = 16;
-
-	// TODO: This is probably slow as heck!
-	for (i, b) in str.as_bytes().iter().enumerate() {
-		let mut cx = x + i * 6;
-		let mut cy = y;
-
-		// Get the glyph index in the glyph sheet. For ASCII characters it's going
-		// be (code point of the character) - (code point of the space, but for the
-		// Unicode characters we probably need to use glyph mapping tables to get
-		// indices of the glyphs in the font.
-		let index = b - b' ';
-
-		// Get the row and column where we can find that glyph.
-		let row = (index / 16) as usize;
-		let column = (index % 16) as usize;
-
-		// Glyph column * width of each glyph.
-		let pixel = column * 6;
-
-		// 13 lines of 12 bytes in each glyph line.
-		let lines = FONT.chars[row * 12 * 13..(row + 1) * 12 * 13].chunks(12);
-
-		// Loop over each of the 13 lines that are part of the single glyph line.
-		for line in lines {
-			// Loop over each of the 12 bytes in the line.
-			for (byte_index, byte) in line.iter().enumerate() {
-				// Loop over each pixel in byte.
-				for pixel_index in 0..8 {
-					let pixel_offset = byte_index * 8 + pixel_index;
-
-					// Ignore these pixels which are not in the column we want.
-					if !(pixel..pixel + 6).contains(&pixel_offset) {
-						continue;
-					}
-
-					// Get the pixel value.
-					let px = (byte >> (8 - pixel_index - 1)) & 1;
-
-					unsafe {
-						(framebuffer.add(framebuffer_tag.framebuffer_pitch as usize * cy + 4 * cx) as *mut u32).write(match px {
-							0 => 0xff0000ff,
-							1 => 0xffffffff,
-							// Doing `& 1` operation means that this can never be anything
-							// else but 0 or 1.
-							_ => core::hint::unreachable_unchecked(),
-						});
-					}
-
-					cx += 1;
-				}
-			}
-
-			cx = x + i * 6;
-			cy += 1;
-		}
-	}
+	framebuffer.write_str(16, 16, "Il1egal 0O", &FONT);
+	framebuffer.write_str(16, 29, "It finally works!", &FONT);
 
 	let memmap_tag = stivale::get_tag(info, stivale::STIVALE2_STRUCT_TAG_MEMMAP_ID);
 
