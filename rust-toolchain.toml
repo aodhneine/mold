@@ -1,0 +1,6 @@
+# We need features (such as global_asm) that are only available on nightly. But
+# we don't need anything else, since it's all provided either by us (written in
+# glorious Rust), or by the user (such as QEMU.)
+[toolchain]
+channel = "nightly"
+profile = "minimal"

@@ -1,0 +1,23 @@
+{
+	"llvm-target": "x86_64-unknown-none",
+	"data-layout": "e-m:e-i64:64-f80:128-n8:16:32:64-S128",
+	"features": "-mmx,-sse,+soft-float",
+	"cpu": "x86-64",
+	"arch": "x86_64",
+	"os": "none",
+	"disable-redzone": true,
+	"executables": true,
+	"linker": "rust-lld",
+	"linker-flavor": "ld.lld",
+	"pre-link-args": {
+		"ld.lld": ["--script=linker.ld"]
+	},
+	"code-model": "kernel",
+	"max-atomic-width": 128,
+	"panic-strategy": "abort",
+	"relocation-model": "static",
+	"target-pointer-width": "64",
+	"target-c-int-width": "32",
+	"target-endian": "little",
+	"no-default-libraries": true
+}
