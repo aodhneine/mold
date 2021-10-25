@@ -1,0 +1,30 @@
+name: CI
+
+# Run only on the default branch. For additional "feature" branches we don't want to run
+# the CI, since they might contain unfinished or broken code.
+on:
+  push:
+    branches:
+      - staging
+  pull_request:
+    branches:
+      - staging
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-amd64:
+    name: "Build on ${{ matrix.os }}"
+    strategy:
+      # Automagically test on both ubuntu and macOS.
+      matrix:
+        os: [ ubuntu-latest, macos-latest ]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v2
+      - name: Build kernel image (without boot disk)
+        run: cargo build --verbose
