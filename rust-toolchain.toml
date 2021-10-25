@@ -4,3 +4,6 @@
 [toolchain]
 channel = "nightly"
 profile = "minimal"
+# We additionally need rust-src to be able to build standard library for our
+# custom target.
+components = ["rust-src"]
