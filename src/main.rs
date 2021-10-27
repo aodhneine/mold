@@ -316,6 +316,18 @@ mod framebuffer {
 			}
 		}
 	}
+
+	// SAFETY: The only place where we use the inner pointer in the framebuffer
+	// and we care about threads is when using it as a static type, but then we
+	// have to use it through a mutex.
+	//
+	// Note that this DOES NOT imply that framebuffer is safe to access between
+	// threads, only that it can be sent between them. The only way to actually
+	// access the inner pointer is in the static variable, which, again, is safe-
+	// guarded behind a mutex.
+	unsafe impl Send for Framebuffer {}
+
+	pub static FRAMEBUFFER: crate::cell::RacyCell<crate::spin::Mutex<Framebuffer>> = crate::cell::RacyCell::new();
 }
 
 #[cfg_attr(debug_assertions, allow(unused_must_use))]
@@ -337,10 +349,12 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 		&*(framebuffer_tag as *const stivale::stivale2_struct_tag_framebuffer)
 	};
 
-	let mut framebuffer = framebuffer::Framebuffer::new(framebuffer_tag);
+	unsafe {
+		framebuffer::FRAMEBUFFER.set_once(spin::Mutex::new(framebuffer::Framebuffer::new(framebuffer_tag)));
 
-	framebuffer.write_str(16, 16, "Il1egal 0O", &FONT);
-	framebuffer.write_str(16, 29, "It finally works!", &FONT);
+		framebuffer::FRAMEBUFFER.get_mut().lock().write_str(16, 16, "Il1egal 0O", &FONT);
+		framebuffer::FRAMEBUFFER.get_mut().lock().write_str(16, 29, "It finally works!", &FONT);
+	};
 
 	let memmap_tag = stivale::get_tag(info, stivale::STIVALE2_STRUCT_TAG_MEMMAP_ID);
 
