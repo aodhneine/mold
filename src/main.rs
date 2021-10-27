@@ -212,7 +212,7 @@ pub struct FontInfo {
 
 /// Global 6x13 font, based on [Cozette](https://github.com/slavfox/Cozette).
 const FONT: FontInfo = FontInfo {
-	chars: include_bytes!("../font.raw"),
+	chars: include_bytes!("../fonts/font.raw"),
 	glyphsheet_width: 96,
 	size: (6, 13),
 	baseline: 10,
