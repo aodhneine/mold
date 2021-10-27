@@ -77,6 +77,128 @@ impl core::fmt::Write for SerialPort {
 	}
 }
 
+mod spin {
+	use core::sync::atomic::AtomicBool;
+	use core::sync::atomic::Ordering::{ Acquire, Release };
+
+	/// Naive spinlock implementation for embedded systems.
+	#[repr(transparent)]
+	pub struct Spinlock {
+		locked: AtomicBool,
+	}
+
+	impl Spinlock {
+		pub fn new() -> Self {
+			return Self {
+				locked: AtomicBool::new(false),
+			};
+		}
+
+		// Based on the source code taken from https://gpuopen.com/gdc-presentations/
+		// 2019/gdc-2019-s2-amd-ryzen-processor-software-optimization.pdf (page 46)
+		// and https://probablydance.com/2019/12/30/measuring-mutexes-spinlocks-and-
+		// how-bad-the-linux-scheduler-really-is/.
+		pub fn lock(&self) {
+			loop {
+				if self.locked.compare_exchange(false, true, Acquire, Acquire).is_ok() {
+					break;
+				}
+
+				core::hint::spin_loop();
+			}
+		}
+
+		pub fn unlock(&self) {
+			self.locked.store(false, Release);
+		}
+	}
+
+	/// Mutually exclusive data implemented using spinlocks.
+	pub struct Mutex<T> {
+		lock: Spinlock,
+		data: core::cell::UnsafeCell<T>,
+	}
+
+	// Same impl's as the standard library's Mutex.
+	unsafe impl<T: Send> Send for Mutex<T> {}
+	unsafe impl<T: Send> Sync for Mutex<T> {}
+
+	impl<T> Mutex<T> {
+		pub fn new(value: T) -> Self {
+			return Self {
+				lock: Spinlock::new(),
+				data: core::cell::UnsafeCell::new(value),
+			};
+		}
+
+		pub fn lock(&mut self) -> MutexGuard<T> {
+			self.lock.lock();
+
+			return MutexGuard {
+				mutex: self,
+			};
+		}
+	}
+
+	pub struct MutexGuard<'a, T> {
+		mutex: &'a Mutex<T>,
+	}
+
+	impl<'a, T> core::ops::Deref for MutexGuard<'a, T> {
+		type Target = T;
+
+		fn deref(&self) -> &Self::Target {
+			return unsafe {
+				&*self.mutex.data.get()
+			};
+		}
+	}
+
+	impl<'a, T> core::ops::DerefMut for MutexGuard<'a, T> {
+		fn deref_mut(&mut self) -> &mut Self::Target {
+			return unsafe {
+				&mut *self.mutex.data.get()
+			};
+		}
+	}
+
+	impl<'a, T> Drop for MutexGuard<'a, T> {
+		fn drop(&mut self) {
+			self.mutex.lock.unlock();
+		}
+	}
+}
+
+mod cell {
+	pub struct RacyCell<T> {
+		inner: core::cell::UnsafeCell<Option<T>>,
+	}
+
+	impl<T> RacyCell<T> {
+		pub const fn new() -> Self {
+			return Self {
+				inner: core::cell::UnsafeCell::new(None),
+			};
+		}
+
+		pub unsafe fn set_once(&self, value: T) {
+			match &*self.inner.get() {
+				Some(_) => panic!("cell already set"),
+				None => *self.inner.get() = Some(value),
+			}
+		}
+
+		pub unsafe fn get_mut(&self) -> &mut T {
+			return match &mut *self.inner.get() {
+				Some(v) => v,
+				None => panic!("cell not set"),
+			}
+		}
+	}
+
+	unsafe impl<T: Sync + Send> Sync for RacyCell<T> {}
+}
+
 pub struct FontInfo {
 	/// Region of memory where the spritesheet with the glyphs is stored.
 	chars: &'static [u8],
