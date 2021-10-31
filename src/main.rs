@@ -231,6 +231,20 @@ mod lazy {
 	unsafe impl<T: Sync + Send> Sync for Once<T> {}
 }
 
+pub struct GlyphMapping {
+	// For example, a mapping `0\x20\x7F` would map each character from printable
+	// ASCII set to a glyph index 0 to 96 (exclusive).
+	// A mapping `\x41\x42\x43\x44\x45` would correspond to mapping characters
+	// from 'A' to 'E' to indices 0 to 4.
+	mapping: &'static str,
+}
+
+impl GlyphMapping {
+	pub fn glyph(&self, c: char) -> usize {
+		return (c as u8 - b' ') as usize;
+	}
+}
+
 pub struct FontInfo {
 	/// Region of memory where the spritesheet with the glyphs is stored.
 	chars: &'static [u8],
@@ -240,6 +254,8 @@ pub struct FontInfo {
 	size: (u8, u8),
 	/// Offset in pixels from the top of the glyph at which is the baseline.
 	baseline: u16,
+	/// Mapping from character code point to glyph index.
+	glyph_mapping: GlyphMapping,
 }
 
 /// Global 6x13 font, based on [Cozette](https://github.com/slavfox/Cozette).
@@ -248,6 +264,9 @@ const FONT: FontInfo = FontInfo {
 	glyphsheet_width: 96,
 	size: (6, 13),
 	baseline: 10,
+	glyph_mapping: GlyphMapping {
+		mapping: "\0\u{20}\u{7F}"
+	},
 };
 
 // char_offset = ' ' - character
