@@ -305,65 +305,70 @@ mod framebuffer {
 			};
 		}
 
+		// TODO: This is probably slow as heck!
+		pub fn write_glyph(&mut self, x: usize, y: usize, c: char, font: &crate::FontInfo) {
+			let mut cx = x;
+			let mut cy = y;
+
+			// Get the glyph index in the glyph sheet. For ASCII characters it's going
+			// be (code point of the character) - (code point of the space), but for the
+			// Unicode characters we probably need to use glyph mapping tables to get
+			// indices of the glyphs in the font.
+			let index = font.glyph_mapping.glyph(c);
+
+			// Get the row and column where we can find that glyph.
+			let row = index / 16;
+			let column = index % 16;
+
+			// Glyph column * width of each glyph.
+			let pixel = column * 6;
+
+			// 13 lines of 12 bytes in each glyph line.
+			let lines = font.chars[row * 12 * 13..(row + 1) * 12 * 13].chunks(12);
+
+			// Loop over each of the 13 lines that are part of the single glyph line.
+			for line in lines {
+				// Loop over each of the 12 bytes in the line.
+				for (byte_index, byte) in line.iter().enumerate() {
+					// Loop over each pixel in byte.
+					for pixel_index in 0..8 {
+						let pixel_offset = byte_index * 8 + pixel_index;
+
+						// Ignore those pixels which are not in the column we want.
+						if !(pixel..pixel + 6).contains(&pixel_offset) {
+							continue;
+						}
+
+						// Get the pixel value.
+						let px = (byte >> (8 - pixel_index - 1)) & 1;
+
+						unsafe {
+							(self.inner.add(self.pitch as usize * cy + 4 * cx) as *mut u32).write_volatile(match px {
+								0 => 0xff0000ff,
+								1 => 0xffffffff,
+								// Doing `& 1` operation means that this can never be anything
+								// else but 0 or 1.
+								_ => core::hint::unreachable_unchecked(),
+							});
+						}
+
+						cx += 1;
+					}
+				}
+
+				cx = x;
+				cy += 1;
+			}
+		}
+
 		// Framebuffer only exposes the memory address and some related values, as
 		// width or pitch. It's purpose it not being a TTY like in Linux, but just
 		// a general way to draw pixels on the screen. So you need to provide all
 		// these arguments when writing a string.
 		pub fn write_str(&mut self, x: usize, y: usize, s: &str, font: &crate::FontInfo) {
-			// TODO: This is probably slow as heck!
-			for (i, b) in s.as_bytes().iter().enumerate() {
-				let mut cx = x + i * 6;
-				let mut cy = y;
-
-				// Get the glyph index in the glyph sheet. For ASCII characters it's going
-				// be (code point of the character) - (code point of the space, but for the
-				// Unicode characters we probably need to use glyph mapping tables to get
-				// indices of the glyphs in the font.)
-				let index = b - b' ';
-
-				// Get the row and column where we can find that glyph.
-				let row = (index / 16) as usize;
-				let column = (index % 16) as usize;
-
-				// Glyph column * width of each glyph.
-				let pixel = column * 6;
-
-				// 13 lines of 12 bytes in each glyph line.
-				let lines = font.chars[row * 12 * 13..(row + 1) * 12 * 13].chunks(12);
-
-				// Loop over each of the 13 lines that are part of the single glyph line.
-				for line in lines {
-					// Loop over each of the 12 bytes in the line.
-					for (byte_index, byte) in line.iter().enumerate() {
-						// Loop over each pixel in byte.
-						for pixel_index in 0..8 {
-							let pixel_offset = byte_index * 8 + pixel_index;
-
-							// Ignore those pixels which are not in the column we want.
-							if !(pixel..pixel + 6).contains(&pixel_offset) {
-								continue;
-							}
-
-							// Get the pixel value.
-							let px = (byte >> (8 - pixel_index - 1)) & 1;
-
-							unsafe {
-								(self.inner.add(self.pitch as usize * cy + 4 * cx) as *mut u32).write(match px {
-									0 => 0xff0000ff,
-									1 => 0xffffffff,
-									// Doing `& 1` operation means that this can never be anything
-									// else but 0 or 1.
-									_ => core::hint::unreachable_unchecked(),
-								});
-							}
-
-							cx += 1;
-						}
-					}
-
-					cx = x + i * 6;
-					cy += 1;
-				}
+			for (i, c) in s.chars().enumerate() {
+				let x = x + i * 6;
+				self.write_glyph(x, y, c, font);
 			}
 		}
 	}
