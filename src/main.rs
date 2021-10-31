@@ -29,7 +29,7 @@ static STIVALE2_HEADER: stivale::stivale2_header = stivale::stivale2_header {
 };
 
 mod x86 {
-	pub fn hlt() {
+	pub fn hlt() -> ! {
 		// SAFETY: Calling halt is really unsafe as it, uhm, halts the CPU. But as
 		// we're writing a bare metal OS, we don't care about safety anyway. So if
 		// you're calling this you know what you're doing.
@@ -38,6 +38,14 @@ mod x86 {
 		unsafe {
 			asm!("hlt")
 		};
+
+		// SAFETY: We are calling hlt before this instruction, so we should never,
+		// ever call this instruction. If we did, this is VERY VERY BAD. The ONLY
+		// purpose of this instruction is to signalise to rust that hlt diverges,
+		// so we can use it in places which expect the `!` return type.
+		unsafe {
+			core::hint::unreachable_unchecked()
+		}
 	}
 
 	pub fn outb(port: u16, c: u8) {
