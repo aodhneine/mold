@@ -178,34 +178,57 @@ mod spin {
 	}
 }
 
-mod cell {
-	pub struct RacyCell<T> {
-		inner: core::cell::UnsafeCell<Option<T>>,
+mod lazy {
+	use core::sync::atomic::AtomicU8;
+	use core::sync::atomic::Ordering::{ Acquire, AcqRel, Release };
+
+	/// Atomically-synchronised value that can be initilised only once.
+	pub struct Once<T> {
+		state: AtomicU8,
+		inner: core::cell::UnsafeCell<core::mem::MaybeUninit<T>>,
 	}
 
-	impl<T> RacyCell<T> {
+	const UNINITIALISED: u8 = 0x1;
+	const INITIALISING: u8 = 0x2;
+	const INITIALISED: u8 = 0x4;
+
+	impl<T> Once<T> {
 		pub const fn new() -> Self {
 			return Self {
-				inner: core::cell::UnsafeCell::new(None),
+				state: AtomicU8::new(UNINITIALISED),
+				inner: core::cell::UnsafeCell::new(core::mem::MaybeUninit::uninit()),
 			};
 		}
 
-		pub unsafe fn set_once(&self, value: T) {
-			match &*self.inner.get() {
-				Some(_) => panic!("cell already set"),
-				None => *self.inner.get() = Some(value),
-			}
+		pub fn set_once(&self, value: T) {
+			match self.state.compare_exchange(UNINITIALISED, INITIALISING, AcqRel, Acquire) {
+				Err(_) => panic!("cell already set"),
+				Ok(_) => unsafe {
+					(*self.inner.get()).write(value)
+				},
+			};
+
+			self.state.store(INITIALISED, Release);
 		}
 
-		pub unsafe fn get_mut(&self) -> &mut T {
-			return match &mut *self.inner.get() {
-				Some(v) => v,
-				None => panic!("cell not set"),
-			}
+		pub fn get(&self) -> &T {
+			return match self.state.load(Acquire) {
+				INITIALISED => unsafe {
+					&*((*self.inner.get()).as_ptr())
+				},
+				INITIALISING => panic!("cell panicked while initialsing"),
+				UNINITIALISED => panic!("cell not set"),
+				// SAFETY: We know that state only holds one of these three values, as
+				// this is guaranteed by our control flow, so we can call unrachable
+				// without risking UB.
+				_ => unsafe {
+					core::hint::unreachable_unchecked()
+				},
+			};
 		}
 	}
 
-	unsafe impl<T: Sync + Send> Sync for RacyCell<T> {}
+	unsafe impl<T: Sync + Send> Sync for Once<T> {}
 }
 
 pub struct FontInfo {
@@ -336,7 +359,7 @@ mod framebuffer {
 	// guarded behind a mutex.
 	unsafe impl Send for Framebuffer {}
 
-	pub static FRAMEBUFFER: crate::cell::RacyCell<crate::spin::Mutex<Framebuffer>> = crate::cell::RacyCell::new();
+	pub static FRAMEBUFFER: crate::lazy::Once<crate::spin::Mutex<Framebuffer>> = crate::lazy::Once::new();
 }
 
 #[cfg_attr(debug_assertions, allow(unused_must_use))]
@@ -358,12 +381,14 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 		&*(framebuffer_tag as *const stivale::stivale2_struct_tag_framebuffer)
 	};
 
-	unsafe {
-		framebuffer::FRAMEBUFFER.set_once(spin::Mutex::new(framebuffer::Framebuffer::new(framebuffer_tag)));
+	framebuffer::FRAMEBUFFER.set_once(spin::Mutex::new(framebuffer::Framebuffer::new(framebuffer_tag)));
 
-		framebuffer::FRAMEBUFFER.get_mut().lock().write_str(16, 16, "Il1egal 0O", &FONT);
-		framebuffer::FRAMEBUFFER.get_mut().lock().write_str(16, 29, "It finally works!", &FONT);
-	};
+	// We don't need to lock the mutex multiple times, we can just lock it once
+	// and then unlock when we are done writing everything.
+	let mut guard = framebuffer::FRAMEBUFFER.get().lock();
+
+	guard.write_str(16, 16, "Il1egal 0O", &FONT);
+	guard.write_str(16, 29, "It finally works!", &FONT);
 
 	let memmap_tag = stivale::get_tag(info, stivale::STIVALE2_STRUCT_TAG_MEMMAP_ID);
 
