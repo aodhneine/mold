@@ -139,7 +139,8 @@ mod spin {
 			};
 		}
 
-		pub fn lock(&mut self) -> MutexGuard<T> {
+		#[must_use = "this will immediately drop the mutex guard"]
+		pub fn lock(&self) -> MutexGuard<T> {
 			self.lock.lock();
 
 			return MutexGuard {
