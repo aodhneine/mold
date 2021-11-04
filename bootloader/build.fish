@@ -6,12 +6,12 @@ function info
 end
 
 info "cloning limine source code"
-git clone https://github.com/limine-bootloader/limine --depth 1 limine-source
-pushd limine-source
+git clone https://github.com/limine-bootloader/limine --depth 1
+
+pushd limine
 
 # For some reason I can't build limine using clang anymore.
 info "building limine-uefi"
 make limine-uefi -j17
 
-info "done"
 popd

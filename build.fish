@@ -42,8 +42,8 @@ info "creating EFI directories"
 sudo mkdir -pv $mntdir/EFI/BOOT
 
 info "copying files into mount point"
-sudo cp -v limine/limine-source/bin/BOOTX64.EFI $mntdir/EFI/BOOT
-sudo cp -v limine/limine.cfg $mntdir
+sudo cp -v bootloader/limine/bin/BOOTX64.EFI $mntdir/EFI/BOOT
+sudo cp -v bootloader/limine.cfg $mntdir
 sudo cp -v target/x86_64-mold/debug/mold $mntdir
 
 info "unmounting and detaching loop device $loopdevice"
