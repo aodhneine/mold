@@ -1,15 +1,12 @@
 #!/usr/bin/env fish
 
-function info
-  printf "%s=>%s " (set_color -o blue) (set_color normal)
-  printf "%s%s%s\n" (set_color -o) $argv (set_color normal)
-end
-
-set -xa PATH ~/src/qemu/build
+# Replace these with your paths to QEMU and OVMF. You can find instructions how
+# to build OVMF from source here:
+#   https://gist.github.com/aodhneine/0dded8440c77392ecd733f7818ace411
+set qemu_bin ~/src/qemu/build/qemu-system-x86_64
 set ovmf_path ~/src/edk2/Build/OvmfX64/RELEASE_GCC5/FV/OVMF.fd
 
-info "running kernel in qemu with ovmf"
-qemu-system-x86_64 \
+$qemu_bin \
   -enable-kvm \
   -m 128 \
   -bios $ovmf_path \
