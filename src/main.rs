@@ -102,10 +102,8 @@ mod spin {
 			};
 		}
 
-		// Based on the source code taken from https://gpuopen.com/gdc-presentations/
-		// 2019/gdc-2019-s2-amd-ryzen-processor-software-optimization.pdf (page 46)
-		// and https://probablydance.com/2019/12/30/measuring-mutexes-spinlocks-and-
-		// how-bad-the-linux-scheduler-really-is/.
+		// Based on the source code taken from https://gpuopen.com/gdc-presentations/2019/gdc-2019-s2-amd-ryzen-processor-software-optimization.pdf (page 46)
+		// and https://probablydance.com/2019/12/30/measuring-mutexes-spinlocks-and-how-bad-the-linux-scheduler-really-is/.
 		pub fn lock(&self) {
 			loop {
 				if self.locked.compare_exchange(false, true, Acquire, Acquire).is_ok() {
@@ -182,7 +180,7 @@ mod lazy {
 	use core::sync::atomic::AtomicU8;
 	use core::sync::atomic::Ordering::{ Acquire, AcqRel, Release };
 
-	/// Atomically-synchronised value that can be initilised only once.
+	/// Atomically-synchronised value that can be initialised only once.
 	pub struct Once<T> {
 		state: AtomicU8,
 		inner: core::cell::UnsafeCell<core::mem::MaybeUninit<T>>,
@@ -193,6 +191,7 @@ mod lazy {
 	const INITIALISED: u8 = 0x4;
 
 	impl<T> Once<T> {
+		/// Creates new uninitialised cell.
 		pub const fn new() -> Self {
 			return Self {
 				state: AtomicU8::new(UNINITIALISED),
@@ -216,7 +215,7 @@ mod lazy {
 				INITIALISED => unsafe {
 					&*((*self.inner.get()).as_ptr())
 				},
-				INITIALISING => panic!("cell panicked while initialsing"),
+				INITIALISING => panic!("cell panicked while initialising"),
 				UNINITIALISED => panic!("cell not set"),
 				// SAFETY: We know that state only holds one of these three values, as
 				// this is guaranteed by our control flow, so we can call unrachable
@@ -232,7 +231,7 @@ mod lazy {
 }
 
 pub struct GlyphMapping {
-	// For example, a mapping `0\x20\x7F` would map each character from printable
+	// For example, a mapping `0\x20\x7f` would map each character from printable
 	// ASCII set to a glyph index 0 to 96 (exclusive).
 	// A mapping `\x41\x42\x43\x44\x45` would correspond to mapping characters
 	// from 'A' to 'E' to indices 0 to 4.
@@ -344,10 +343,11 @@ mod framebuffer {
 
 						unsafe {
 							(self.inner.add(self.pitch as usize * cy + 4 * cx) as *mut u32).write_volatile(match px {
+								// TODO: Replace the hardcoded colour values with user-provided ones.
 								0 => 0xff0000ff,
 								1 => 0xffffffff,
-								// Doing `& 1` operation means that this can never be anything
-								// else but 0 or 1.
+								// Since we are doing `& 1` operation, this value cannot be
+								// anything else but 0 or 1.
 								_ => core::hint::unreachable_unchecked(),
 							});
 						}
@@ -405,6 +405,8 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 		&*(framebuffer_tag as *const stivale::stivale2_struct_tag_framebuffer)
 	};
 
+	// Create new framebuffer from the framebuffer given to us by the bootloader
+	// and set it as the global framebuffer.
 	framebuffer::FRAMEBUFFER.set_once(spin::Mutex::new(framebuffer::Framebuffer::new(framebuffer_tag)));
 
 	// We don't need to lock the mutex multiple times, we can just lock it once
@@ -425,7 +427,7 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 		&*(memmap_tag as *const stivale::stivale2_struct_tag_memmap)
 	};
 
-	// Print memory map (for debug purposes.) This way we know which areas of the
+	// Print memory map (for debug purposes). This way we know which areas of the
 	// memory we are allowed to use.
 	for i in 0..memmap_tag.entries {
 		let entry = unsafe {
@@ -446,6 +448,8 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 
 	const COM1: u16 = 0x3F8;
 	let mut com1 = SerialPort::new(COM1);
+
+	// TODO: Use framebuffer in addition to the serial port if available.
 
 	let _ = writeln!(com1, "panic: {}", info);
 	loop {}
