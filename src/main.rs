@@ -235,11 +235,18 @@ pub struct GlyphMapping {
 	// ASCII set to a glyph index 0 to 96 (exclusive).
 	// A mapping `\x41\x42\x43\x44\x45` would correspond to mapping characters
 	// from 'A' to 'E' to indices 0 to 4.
-	mapping: &'static str,
+	map: &'static str,
+	/// Index of the glyph to be used if the character isn't in the supported
+	/// mapping range.
+	replacement: usize,
 }
 
 impl GlyphMapping {
 	pub fn glyph(&self, c: char) -> usize {
+		if c < ' ' || c > '~' {
+			return self.replacement;
+		}
+
 		return (c as u8 - b' ') as usize;
 	}
 }
@@ -247,25 +254,29 @@ impl GlyphMapping {
 pub struct FontInfo {
 	/// Region of memory where the spritesheet with the glyphs is stored.
 	chars: &'static [u8],
+	/// Mapping from character code point to glyph index.
+	glyph_mapping: GlyphMapping,
 	/// Width of the image containing glyphs.
 	glyphsheet_width: u32,
 	/// Size of each glyph in pixels.
 	size: (u8, u8),
 	/// Offset in pixels from the top of the glyph at which is the baseline.
 	baseline: u16,
-	/// Mapping from character code point to glyph index.
-	glyph_mapping: GlyphMapping,
 }
 
 /// Global 6x13 font, based on [Cozette](https://github.com/slavfox/Cozette).
 const FONT: FontInfo = FontInfo {
 	chars: include_bytes!("../fonts/font.raw"),
+	glyph_mapping: GlyphMapping {
+		map: "\0\u{20}\u{7F}",
+		// TODO: Potential issue? In the mapping we are specifying characters that
+		// range from 0x20 to 0x7f, but we use a replacement glyph that falls out
+		// of that character set (the DEL character).
+		replacement: 95,
+	},
 	glyphsheet_width: 96,
 	size: (6, 13),
 	baseline: 10,
-	glyph_mapping: GlyphMapping {
-		mapping: "\0\u{20}\u{7F}"
-	},
 };
 
 // char_offset = ' ' - character
