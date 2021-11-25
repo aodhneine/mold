@@ -372,15 +372,29 @@ mod framebuffer {
 			}
 		}
 
-		// Framebuffer only exposes the memory address and some related values, as
-		// width or pitch. It's purpose it not being a TTY like in Linux, but just
-		// a general way to draw pixels on the screen. So you need to provide all
-		// these arguments when writing a string.
-		pub fn write_str(&mut self, x: usize, y: usize, s: &str, font: &crate::FontInfo) {
-			for (i, c) in s.chars().enumerate() {
-				let x = x + i * 6;
-				self.write_glyph(x, y, c, font);
-			}
+		// TODO: This scroll implementation is REALLY slow, as it requires to read
+		// from the framebuffer on each copy. It should be faster when we switch to
+		// using double buffer.
+		pub fn scroll(&mut self, amount: usize) {
+			// width       bpp
+			//   ▼          ▼
+			// (800 * 600 * 4) - (800 * count * 4)
+			//         ▲                ▲
+			//       height           count
+			let count = (800 * 600 * 4) - (800 * amount * 4);
+
+			// Step 1: copy all bytes from the lines below to the start. We need to
+			// copy 800 bytes per line * count lines * 4 bytes per pixel.
+			let bytes = 800 * amount * 4;
+
+			unsafe {
+				core::ptr::copy(self.inner.add(bytes), self.inner, count)
+			};
+
+			// Step 2: Fill the line we copied from with black.
+			unsafe {
+				self.inner.add(count).write_bytes(0x00, bytes)
+			};
 		}
 	}
 
@@ -395,6 +409,75 @@ mod framebuffer {
 	unsafe impl Send for Framebuffer {}
 
 	pub static FRAMEBUFFER: crate::lazy::Once<crate::spin::Mutex<Framebuffer>> = crate::lazy::Once::new();
+}
+
+// Simple "pseudo-terminal" that abstracts over framebuffer, allowing to easily
+// print text in an easier way (similar to how TTYs work).
+mod tty {
+	// TODO: Each TTY should have its own internal buffer, which it should just
+	// blit onto the framebuffer. This way we could easily implement different
+	// fonts, as well as scrolling.
+	pub struct TTY {
+		font: crate::FontInfo,
+		x: usize,
+		y: usize,
+	}
+
+	impl TTY {
+		pub fn new(font: crate::FontInfo) -> Self {
+			return Self {
+				font,
+				x: 0,
+				y: 0,
+			};
+		}
+
+		// TODO: How are we going to handle colours and italic/bold/strikethrough? We
+		// can use escape codes, we can use format_args and make formatting arguments
+		// an enum member, which will set the global TTY... more statics?
+		pub fn write_str(&mut self, s: &str) {
+			let mut lock = crate::framebuffer::FRAMEBUFFER.get().lock();
+
+			for c in s.chars() {
+				if c == '\n' {
+					self.newline(&mut lock);
+					continue;
+				}
+
+				lock.write_glyph(self.x, self.y, c, &self.font);
+				self.x += self.font.size.0 as usize;
+
+				// Wrap characters on overflow.
+				if self.x + self.font.size.0 as usize > 800 {
+					self.newline(&mut lock);
+				}
+			}
+		}
+
+		fn newline(&mut self, lock: &mut crate::spin::MutexGuard<crate::framebuffer::Framebuffer>) {
+			self.y += self.font.size.1 as usize;
+
+			// Scroll screen on overflow.
+			if self.y + self.font.size.1 as usize > 600 {
+				self.scroll(lock);
+			}
+
+			self.x = 0;
+		}
+
+		fn scroll(&mut self, lock: &mut crate::spin::MutexGuard<crate::framebuffer::Framebuffer>) {
+			// Scroll by the height of one character.
+			lock.scroll(self.font.size.1 as usize);
+			self.y -= self.font.size.1 as usize;
+		}
+	}
+
+	impl core::fmt::Write for TTY {
+		fn write_str(&mut self, s: &str) -> core::fmt::Result {
+			self.write_str(s);
+			return Ok(());
+		}
+	}
 }
 
 #[cfg_attr(debug_assertions, allow(unused_must_use))]
@@ -420,12 +503,11 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 	// and set it as the global framebuffer.
 	framebuffer::FRAMEBUFFER.set_once(spin::Mutex::new(framebuffer::Framebuffer::new(framebuffer_tag)));
 
-	// We don't need to lock the mutex multiple times, we can just lock it once
-	// and then unlock when we are done writing everything.
-	let mut guard = framebuffer::FRAMEBUFFER.get().lock();
+	// Create new TTY.
+	let mut tty = tty::TTY::new(FONT);
+	// Write test message to see if the font is legible.
+	tty.write_str("Il1egal 0O == WROKS!\n");
 
-	guard.write_str(16, 16, "Il1egal 0O", &FONT);
-	guard.write_str(16, 29, "It finally works!", &FONT);
 
 	let memmap_tag = stivale::get_tag(info, stivale::STIVALE2_STRUCT_TAG_MEMMAP_ID);
 
@@ -445,7 +527,11 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 			&*memmap_tag.memmap.as_ptr().add(i as usize)
 		};
 
-		writeln!(com1, "[{:>2}] {:>#10x} {:8} {:?}", i, entry.base, entry.length, entry.ty);
+		writeln!(tty, "[{:>2}] {:>#10x} {:8} {:?}", i, entry.base, entry.length, entry.ty);
+	}
+
+	for i in 0..32 {
+		writeln!(tty, "[{:>7}] foo", i);
 	}
 
 	write!(com1, "{}", "welcome to mold");
