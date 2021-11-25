@@ -487,6 +487,7 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 
 	const COM1: u16 = 0x3F8;
 	let mut com1 = SerialPort::new(COM1);
+	writeln!(com1, "serial port on {:#x}", COM1);
 
 	let framebuffer_tag = stivale::get_tag(info, stivale::STIVALE2_STRUCT_TAG_FRAMEBUFFER_ID);
 
@@ -498,6 +499,8 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 	let framebuffer_tag = unsafe {
 		&*(framebuffer_tag as *const stivale::stivale2_struct_tag_framebuffer)
 	};
+
+	writeln!(com1, "framebuffer {}x{}", framebuffer_tag.framebuffer_width, framebuffer_tag.framebuffer_height);
 
 	// Create new framebuffer from the framebuffer given to us by the bootloader
 	// and set it as the global framebuffer.
@@ -534,7 +537,6 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 		writeln!(tty, "[{:>7}] foo", i);
 	}
 
-	write!(com1, "{}", "welcome to mold");
 	x86::hlt();
 }
 
