@@ -8,6 +8,12 @@ end
 info "building kernel"
 cargo build
 
+if test $status != 0
+  printf '%s!>%s ' (set_color -o red) (set_color normal)
+  printf '%s%s%s\n' (set_color -o) 'failed to compile cargo project' (set_color normal)
+  exit 1
+end
+
 set image "kernel.img"
 
 # Default image size is 48 MB, split into blocks of 512 bytes.
