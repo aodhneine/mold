@@ -35,8 +35,6 @@ mod x86 {
 		// SAFETY: Calling halt is really unsafe as it, uhm, halts the CPU. But as
 		// we're writing a bare metal OS, we don't care about safety anyway. So if
 		// you're calling this you know what you're doing.
-		//
-		// And if not, then what are you even doing?
 		unsafe {
 			asm!("hlt")
 		};
