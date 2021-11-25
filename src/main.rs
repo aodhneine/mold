@@ -376,12 +376,11 @@ mod framebuffer {
 		// from the framebuffer on each copy. It should be faster when we switch to
 		// using double buffer.
 		pub fn scroll(&mut self, amount: usize) {
-			// width       bpp
-			//   ▼          ▼
-			// (800 * 600 * 4) - (800 * count * 4)
-			//         ▲                ▲
-			//       height           count
+			//          width       bpp
+			//            ▼          ▼
 			let count = (800 * 600 * 4) - (800 * amount * 4);
+			//                  ▲
+			//                height
 
 			// Step 1: copy all bytes from the lines below to the start. We need to
 			// copy 800 bytes per line * count lines * 4 bytes per pixel.
