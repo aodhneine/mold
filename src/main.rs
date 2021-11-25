@@ -522,9 +522,9 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 
 	// Print memory map (for debug purposes). This way we know which areas of the
 	// memory we are allowed to use.
-	for i in 0..memmap_tag.entries {
+	for i in 0..memmap_tag.entries as usize {
 		let entry = unsafe {
-			&*memmap_tag.memmap.as_ptr().add(i as usize)
+			&*memmap_tag.memmap.as_ptr().add(i)
 		};
 
 		writeln!(tty, "[{:>2}] {:>#10x} {:8} {:?}", i, entry.base, entry.length, entry.ty);
