@@ -514,7 +514,6 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 	// Write test message to see if the font is legible.
 	tty.write_str("Il1egal 0O == WROKS!\n");
 
-
 	let memmap_tag = stivale::get_tag(info, stivale::STIVALE2_STRUCT_TAG_MEMMAP_ID);
 
 	if memmap_tag.is_null() {
