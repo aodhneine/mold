@@ -417,6 +417,9 @@ mod tty {
 	// TODO: Each TTY should have its own internal buffer, which it should just
 	// blit onto the framebuffer. This way we could easily implement different
 	// fonts, as well as scrolling.
+	// TODO: Currently we need to pass around the framebuffer guard to each method
+	// which is called from write_str. I don't like it, we probably want to have a
+	// spinlocked tty instead, or just unify tty and framebuffer.
 	pub struct TTY {
 		font: crate::FontInfo,
 		x: usize,
