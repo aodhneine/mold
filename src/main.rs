@@ -1,6 +1,6 @@
 #![no_std]
 #![no_main]
-#![feature(asm)]
+#![feature(asm, const_ptr_offset)]
 
 mod stivale;
 
@@ -23,7 +23,9 @@ static STIVALE2_FRAMEBUFFER_TAG: stivale::stivale2_header_tag_framebuffer = stiv
 #[used]
 static STIVALE2_HEADER: stivale::stivale2_header = stivale::stivale2_header {
 	entry_point: 0,
-	stack: &STACK[8191] as *const u8,
+	stack: unsafe {
+		STACK.as_ptr().add(STACK.len())
+	},
 	flags: (1 << 1),
 	tags: &STIVALE2_FRAMEBUFFER_TAG as *const stivale::stivale2_header_tag_framebuffer as *const stivale::stivale2_header_tag,
 };
