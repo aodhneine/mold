@@ -534,10 +534,6 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 		writeln!(tty, "[{:>2}] {:>#10x} {:8} {:?}", i, entry.base, entry.length, entry.ty);
 	}
 
-	for i in 0..32 {
-		writeln!(tty, "[{:>7}] foo", i);
-	}
-
 	x86::hlt();
 }
 
