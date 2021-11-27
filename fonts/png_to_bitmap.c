@@ -34,7 +34,7 @@ int main(void) {
 	};
 
 	/* 6 glyph lines * 13 lines per glyph * 12 bytes in each glyph line */
-	u8 *bitmap = malloc(12 * 13 * 6);
+	u8 *bitmap = malloc(12 * font.height * 6);
 
 	if (bitmap == NULL) {
 		perror("malloc");
@@ -79,14 +79,14 @@ int main(void) {
 		return 1;
 	}
 
-	ssize_t result = write(file, bitmap, 12 * 13 * 6);
+	ssize_t result = write(file, bitmap, 12 * font.height * 6);
 
 	if (result == -1) {
 		perror("write");
 		return 1;
 	}
 
-	if (result < 12 * 13 * 6) {
+	if (result < 12 * font.height * 6) {
 		fprintf(stderr, "wrote less bytes than expected!");
 	}
 
