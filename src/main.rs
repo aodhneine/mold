@@ -12,9 +12,10 @@ static STIVALE2_FRAMEBUFFER_TAG: stivale::stivale2_header_tag_framebuffer = stiv
 		identifier: stivale::STIVALE2_HEADER_TAG_FRAMEBUFFER_ID,
 		next: core::ptr::null(),
 	},
+	// Request the best possible resolution it can find.
 	framebuffer_width: 0,
 	framebuffer_height: 0,
-	framebuffer_bpp: 24,
+	framebuffer_bpp: 0,
 	unused: 0,
 };
 
@@ -30,6 +31,7 @@ static STIVALE2_HEADER: stivale::stivale2_header = stivale::stivale2_header {
 	tags: &STIVALE2_FRAMEBUFFER_TAG as *const stivale::stivale2_header_tag_framebuffer as *const stivale::stivale2_header_tag,
 };
 
+/// Low-level wrappers for x86 assembly instructions.
 mod x86 {
 	pub fn hlt() -> ! {
 		// SAFETY: Calling halt is really unsafe as it, uhm, halts the CPU. But as
@@ -56,11 +58,11 @@ mod x86 {
 	}
 }
 
-struct SerialPort {
+struct Serial {
 	port: u16,
 }
 
-impl SerialPort {
+impl Serial {
 	pub const fn new(port: u16) -> Self {
 		return Self {
 			port,
@@ -78,156 +80,11 @@ impl SerialPort {
 	}
 }
 
-impl core::fmt::Write for SerialPort {
+impl core::fmt::Write for Serial {
 	fn write_str(&mut self, s: &str) -> core::fmt::Result {
 		self.write_str(s);
 		return Ok(());
 	}
-}
-
-mod spin {
-	use core::sync::atomic::AtomicBool;
-	use core::sync::atomic::Ordering::{ Acquire, Release };
-
-	/// Naive spinlock implementation for embedded systems.
-	#[repr(transparent)]
-	pub struct Spinlock {
-		locked: AtomicBool,
-	}
-
-	impl Spinlock {
-		pub fn new() -> Self {
-			return Self {
-				locked: AtomicBool::new(false),
-			};
-		}
-
-		// Based on the source code taken from https://gpuopen.com/gdc-presentations/2019/gdc-2019-s2-amd-ryzen-processor-software-optimization.pdf (page 46)
-		// and https://probablydance.com/2019/12/30/measuring-mutexes-spinlocks-and-how-bad-the-linux-scheduler-really-is/.
-		pub fn lock(&self) {
-			loop {
-				if self.locked.compare_exchange(false, true, Acquire, Acquire).is_ok() {
-					break;
-				}
-
-				core::hint::spin_loop();
-			}
-		}
-
-		pub fn unlock(&self) {
-			self.locked.store(false, Release);
-		}
-	}
-
-	/// Mutually exclusive data implemented using spinlocks.
-	pub struct Mutex<T> {
-		lock: Spinlock,
-		data: core::cell::UnsafeCell<T>,
-	}
-
-	// Same impl's as the standard library's Mutex.
-	unsafe impl<T: Send> Send for Mutex<T> {}
-	unsafe impl<T: Send> Sync for Mutex<T> {}
-
-	impl<T> Mutex<T> {
-		pub fn new(value: T) -> Self {
-			return Self {
-				lock: Spinlock::new(),
-				data: core::cell::UnsafeCell::new(value),
-			};
-		}
-
-		#[must_use = "this will immediately drop the mutex guard"]
-		pub fn lock(&self) -> MutexGuard<T> {
-			self.lock.lock();
-
-			return MutexGuard {
-				mutex: self,
-			};
-		}
-	}
-
-	pub struct MutexGuard<'a, T> {
-		mutex: &'a Mutex<T>,
-	}
-
-	impl<'a, T> core::ops::Deref for MutexGuard<'a, T> {
-		type Target = T;
-
-		fn deref(&self) -> &Self::Target {
-			return unsafe {
-				&*self.mutex.data.get()
-			};
-		}
-	}
-
-	impl<'a, T> core::ops::DerefMut for MutexGuard<'a, T> {
-		fn deref_mut(&mut self) -> &mut Self::Target {
-			return unsafe {
-				&mut *self.mutex.data.get()
-			};
-		}
-	}
-
-	impl<'a, T> Drop for MutexGuard<'a, T> {
-		fn drop(&mut self) {
-			self.mutex.lock.unlock();
-		}
-	}
-}
-
-mod lazy {
-	use core::sync::atomic::AtomicU8;
-	use core::sync::atomic::Ordering::{ Acquire, AcqRel, Release };
-
-	/// Atomically-synchronised value that can be initialised only once.
-	pub struct Once<T> {
-		state: AtomicU8,
-		inner: core::cell::UnsafeCell<core::mem::MaybeUninit<T>>,
-	}
-
-	const UNINITIALISED: u8 = 0x1;
-	const INITIALISING: u8 = 0x2;
-	const INITIALISED: u8 = 0x4;
-
-	impl<T> Once<T> {
-		/// Creates new uninitialised cell.
-		pub const fn new() -> Self {
-			return Self {
-				state: AtomicU8::new(UNINITIALISED),
-				inner: core::cell::UnsafeCell::new(core::mem::MaybeUninit::uninit()),
-			};
-		}
-
-		pub fn set_once(&self, value: T) {
-			match self.state.compare_exchange(UNINITIALISED, INITIALISING, AcqRel, Acquire) {
-				Err(_) => panic!("cell already set"),
-				Ok(_) => unsafe {
-					(*self.inner.get()).write(value)
-				},
-			};
-
-			self.state.store(INITIALISED, Release);
-		}
-
-		pub fn get(&self) -> &T {
-			return match self.state.load(Acquire) {
-				INITIALISED => unsafe {
-					&*((*self.inner.get()).as_ptr())
-				},
-				INITIALISING => panic!("cell panicked while initialising"),
-				UNINITIALISED => panic!("cell not set"),
-				// SAFETY: We know that state only holds one of these three values, as
-				// this is guaranteed by our control flow, so we can call unrachable
-				// without risking UB.
-				_ => unsafe {
-					core::hint::unreachable_unchecked()
-				},
-			};
-		}
-	}
-
-	unsafe impl<T: Sync + Send> Sync for Once<T> {}
 }
 
 pub struct GlyphMapping {
@@ -407,7 +264,7 @@ mod framebuffer {
 	// guarded behind a mutex.
 	unsafe impl Send for Framebuffer {}
 
-	pub static FRAMEBUFFER: crate::lazy::Once<crate::spin::Mutex<Framebuffer>> = crate::lazy::Once::new();
+	pub static FRAMEBUFFER: hal::lazy::Once<hal::spin::Mutex<Framebuffer>> = hal::lazy::Once::new();
 }
 
 // Simple "pseudo-terminal" that abstracts over framebuffer, allowing to easily
@@ -456,7 +313,7 @@ mod tty {
 			}
 		}
 
-		fn newline(&mut self, lock: &mut crate::spin::MutexGuard<crate::framebuffer::Framebuffer>) {
+		fn newline(&mut self, lock: &mut hal::spin::MutexGuard<crate::framebuffer::Framebuffer>) {
 			self.y += self.font.size.1 as usize;
 
 			// Scroll screen on overflow.
@@ -467,7 +324,7 @@ mod tty {
 			self.x = 0;
 		}
 
-		fn scroll(&mut self, lock: &mut crate::spin::MutexGuard<crate::framebuffer::Framebuffer>) {
+		fn scroll(&mut self, lock: &mut hal::spin::MutexGuard<crate::framebuffer::Framebuffer>) {
 			// Scroll by the height of one character.
 			lock.scroll(self.font.size.1 as usize);
 			self.y -= self.font.size.1 as usize;
@@ -488,7 +345,7 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 	use core::fmt::Write;
 
 	const COM1: u16 = 0x3F8;
-	let mut com1 = SerialPort::new(COM1);
+	let mut com1 = Serial::new(COM1);
 	writeln!(com1, "serial port on {:#x}", COM1);
 
 	let framebuffer_tag = stivale::get_tag(info, stivale::STIVALE2_STRUCT_TAG_FRAMEBUFFER_ID);
@@ -506,7 +363,7 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 
 	// Create new framebuffer from the framebuffer given to us by the bootloader
 	// and set it as the global framebuffer.
-	framebuffer::FRAMEBUFFER.set_once(spin::Mutex::new(framebuffer::Framebuffer::new(framebuffer_tag)));
+	framebuffer::FRAMEBUFFER.set_once(hal::spin::Mutex::new(framebuffer::Framebuffer::new(framebuffer_tag)));
 
 	// Create new TTY.
 	let mut tty = tty::TTY::new(FONT);
@@ -543,7 +400,7 @@ fn panic(info: &core::panic::PanicInfo) -> ! {
 	use core::fmt::Write;
 
 	const COM1: u16 = 0x3F8;
-	let mut com1 = SerialPort::new(COM1);
+	let mut com1 = Serial::new(COM1);
 
 	// TODO: Use framebuffer in addition to the serial port if available.
 

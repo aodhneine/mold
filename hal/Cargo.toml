@@ -1,12 +1,6 @@
-[workspace]
-members = ["hal"]
-
 [package]
-name = "mold"
+name = "hal"
 version = "0.1.0"
 edition = "2021"
 license = "0BSD"
 authors = ["Aodhnait Étaín <aodhneine@pm.me>"]
-
-[dependencies]
-hal = { path = "hal" }
