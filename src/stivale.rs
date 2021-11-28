@@ -81,7 +81,7 @@ pub struct stivale2_struct_tag_framebuffer {
 pub const STIVALE2_STRUCT_TAG_FRAMEBUFFER_ID: u64 = 0x506461d2950408fa;
 
 #[repr(u32)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 #[allow(non_camel_case_types, dead_code)]
 pub enum stivale2_mmap_type {
 	USABLE = 1,

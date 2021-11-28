@@ -381,6 +381,9 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 		&*(memmap_tag as *const stivale::stivale2_struct_tag_memmap)
 	};
 
+	let mut usable_bytes = 0;
+	let mut usable_regions = 0;
+
 	// Print memory map (for debug purposes). This way we know which areas of the
 	// memory we are allowed to use.
 	for i in 0..memmap_tag.entries as usize {
@@ -389,7 +392,15 @@ pub extern "C" fn _start(info: *const stivale::stivale2_struct) {
 		};
 
 		writeln!(tty, "[{:>2}] {:>#10x} {:8} {:?}", i, entry.base, entry.length, entry.ty);
+
+		if entry.ty == stivale::stivale2_mmap_type::USABLE {
+			usable_bytes += entry.length;
+			usable_regions += 1;
+		}
 	}
+
+	// This should print around 120 MiB of free memory.
+	writeln!(tty, "found {} free regions with {} bytes ({} MiB)", usable_regions, usable_bytes, usable_bytes / 1024 / 1024);
 
 	x86::hlt();
 }
